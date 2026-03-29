@@ -1,0 +1,16 @@
+# 构建与依赖产物 | Build artifacts and dependencies
+dist
+coverage
+node_modules
+pnpm-lock.yaml
+
+# 生成代码：由 openapi-generator-ts-cli 自己格式化，重复格式化只会制造无意义 diff
+# Generated sources: already formatted by the generator, reformatting creates noise
+src/generated
+
+# Markdown 不交给 prettier：文档里有大量中英混排表格，prettier 会按字符宽度重排
+# 列宽，手工对齐的表格每次都被改写，format:check 也就永远是红的
+# Markdown is excluded: the docs contain CJK/ASCII mixed tables and prettier
+# re-pads columns by display width, rewriting every hand-aligned table
+*.md
+CHANGELOG.md
