@@ -50,6 +50,12 @@ export default {
    * name 只用于日志输出，url 是真正拉取的地址。多服务网关在这里继续追加，
    * 所有文档会在一次生成中合并，同名 schema 以第一个出现的为准。
    *
+   * url 支持被环境变量 OPENAPI_URL 覆盖，sync-contract.yml 就是靠它把地址换成
+   * 协议中心某个 release 的聚合文档，从而让「协议发版 → SDK 重新生成」自动串起来。
+   * [EN] `url` honours the OPENAPI_URL environment variable, which is how sync-contract.yml
+   * points it at a specific release's aggregated document and chains "contract released ->
+   * SDK regenerated" together automatically.
+   *
    * 默认指向 Swagger 官方 Petstore 示例文档（公网可访问），所以 kopy new 之后
    * 直接 pnpm generate 就能跑通整条链路，确认没问题再换成你自己的地址。
    * 生成器同时吃 OpenAPI 3 与 Swagger 2，两种文档可以混在同一个 sources 里。
@@ -73,8 +79,23 @@ export default {
    *
    * 例如内网网关要求的租户头：{ 'X-Tenant-Id': 'default' }
    * For example a gateway that requires a tenant header.
+   *
+   * 这里留了一个 OPENAPI_ACCEPT 环境变量开关，是为了让 CI 能直接拉 GitHub Release
+   * 资产：协议中心（share-proto）发版时会把聚合文档作为 release 资产上传，而私有仓库
+   * 的资产只能通过 API 地址下载，且必须带 `Accept: application/octet-stream`
+   * 否则 GitHub 返回的是资产的 JSON 元信息，不是文档本身，生成器会报「文档格式不对」。
+   * 本地手动跑不需要设置它。
+   *
+   * [EN] The OPENAPI_ACCEPT switch exists so CI can pull a GitHub Release asset directly: the
+   * contract hub (share-proto) uploads its aggregated document as a release asset, and a private
+   * repository's assets can only be downloaded through the API URL, which requires
+   * `Accept: application/octet-stream`. Without that header GitHub returns the asset's JSON
+   * metadata rather than the document, and the generator rejects it as malformed. Running
+   * locally by hand needs none of this.
    */
-  headers: {},
+  headers: {
+    ...(process.env.OPENAPI_ACCEPT ? { Accept: process.env.OPENAPI_ACCEPT } : {}),
+  },
 
   /**
    * 读取 Bearer Token 的环境变量名 | Env var holding the Bearer token

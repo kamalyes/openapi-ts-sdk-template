@@ -100,6 +100,30 @@ questions:
     default: ""
 
   # --------------------------------------------------------------------------
+  # 协议中心联动 | Contract-hub integration
+  #
+  # 填了这一项，SDK 就不只是「对着一个 URL 生成代码」，而是接到协议中心的发布流水线上：
+  # 协议中心（kronos-share-proto-template 生成的仓库）每次发版都会把聚合 OpenAPI 文档
+  # 作为 release 资产上传，并 dispatch 通知本仓库；.github/workflows/sync-contract.yml
+  # 收到后自动重新生成、验证、写 changeset、推主干，最后由 changesets 发 npm。
+  #
+  # 留空也完全能用：那就是 SwaggerUrl 指向某个服务的文档地址，手动 pnpm generate 的用法。
+  #
+  # [EN] Filling this in connects the SDK to a contract hub's release pipeline instead of merely
+  # generating against a URL. The hub (a repository generated from kronos-share-proto-template)
+  # attaches its aggregated OpenAPI document to every release and dispatches a notification here;
+  # .github/workflows/sync-contract.yml then regenerates, verifies, writes a changeset and pushes
+  # to the trunk, and changesets publishes to npm.
+  #
+  # Leaving it empty is perfectly fine: that is the plain mode where SwaggerUrl points at a
+  # service's document and `pnpm generate` is run by hand
+  # --------------------------------------------------------------------------
+  - name: ProtoRepo
+    prompt: "协议中心仓库 owner/repo（由 kronos-share-proto-template 生成；留空则只按 SwaggerUrl 生成）| Contract-hub repository owner/repo"
+    type: string
+    default: ""
+
+  # --------------------------------------------------------------------------
   # 工程化选项 | Engineering options
   # --------------------------------------------------------------------------
   - name: NodeVersion
