@@ -72,7 +72,10 @@ reviewable diffs in pull requests, and anyone can clone and build without creden
 │   └── index.ts                # package entry
 ├── tests/                      # tests for the hand-written layer
 ├── .changeset/                 # versioning and changelogs
-├── .github/workflows/          # CI and release pipelines
+├── .github/workflows/          # CI / release / contract sync
+│   ├── ci.yml                  # lint / typecheck / test / build
+│   ├── release.yml             # two-phase changesets release to npm
+│   └── sync-contract.yml       # regenerate after a contract-hub release
 ├── README.md                   # Chinese documentation
 └── README.en.md                # English documentation (this file)
 ```
@@ -197,6 +200,26 @@ Extra headers, such as a tenant header, go into the `headers` map of
 OPENAPI_URL=http://127.0.0.1:8080/openapi.json pnpm generate
 ```
 
+### Generating from a contract-hub release
+
+The input is a released version's aggregated document rather than a running service:
+
+```bash
+# Resolve the asset URL of one release (gh must be able to read the hub repository)
+ASSET=$(gh api repos/[[ .ProtoRepo ]]/releases/tags/v1.2.0 \
+  --jq '.assets[] | select(.name == "openapi.swagger.yaml") | .url')
+
+OPENAPI_URL="$ASSET" \
+OPENAPI_ACCEPT=application/octet-stream \
+[[ .TokenEnvName ]]="$(gh auth token)" \
+  pnpm generate
+```
+
+`OPENAPI_ACCEPT` is required: GitHub's asset API URL returns the asset's JSON metadata by default
+and only returns the document itself with `application/octet-stream`.
+
+CI does all of this automatically — see the next section.
+
 ### Contract drift check
 
 ```bash
@@ -229,6 +252,63 @@ request; merging it publishes to npm with provenance attestation.
 Both `.npmrc` and `publishConfig.registry` point at `[[ .NpmRegistry ]]`. Note that npm
 provenance only works on npmjs.org: set `publishConfig.provenance` to `false` for a
 private registry, otherwise publishing fails.
+
+## 🔗 Wiring into a contract hub
+
+Once the `ProtoRepo` template variable (or the `PROTO_REPO` repository variable) is set, this SDK
+stops being "code generated against a URL" and becomes part of the contract hub's release pipeline:
+
+```text
+  The hub (share-proto) runs Release Contract
+            |
+            |  repository_dispatch(proto-released)
+            |  the payload carries the version, the module path and whether this was
+            |  a major / minor / patch bump
+            v
+  sync-contract.yml in this repository
+            |- 1. Resolve that release's openapi.swagger.yaml asset URL
+            |- 2. pnpm generate rewrites src/generated
+            |- 3. lint / typecheck / test / build prove it works
+            |- 4. No change means stop here; a change writes a changeset and commits to the trunk
+            `- 5. Invoke release.yml
+                      v
+            changesets opens the "version packages" PR -> merging it publishes to npm
+```
+
+### Why a changeset instead of publishing directly
+
+The two-phase changesets flow is this repository's only release path, and it owns both the version
+number and the CHANGELOG. Bypassing it would leave a gap in the CHANGELOG, and "which contract
+version is this SDK built from" is the very first thing anyone looks up when something breaks.
+Going through a changeset makes every npm version traceable to a concrete contract tag:
+
+```markdown
+## 1.0.0
+
+### Major Changes
+
+- Synced contract `[[ .ProtoRepo ]]@v2.0.0` and regenerated `src/generated`
+```
+
+The level is not guesswork either: the hub sends `bump` in the dispatch, so a breaking contract
+change becomes a major SDK release instead of yet another minor.
+
+### Required configuration
+
+| Setting | Type | Purpose |
+| --- | --- | --- |
+| `PROTO_REPO` | Repository variable | The hub repository `owner/repo`; overrides the `ProtoRepo` template variable |
+| `OPS_CLI_APP_ID` | Repository secret | Required when the hub is private, to read its releases |
+| `OPS_CLI_APP_PRIVATE_KEY` | Repository secret | The matching private key |
+| `NPM_TOKEN` | Repository secret | For publishing (the release flow needs it anyway) |
+
+On the hub side, add this repository to its `SDK_REPO` variable, otherwise it does not know whom
+to notify.
+
+### Running a sync by hand
+
+Actions -> Sync Contract -> enter a version (or `latest`). Useful when a notification was missed,
+or when first wiring the chain together to verify it.
 
 ## 🧰 Scripts
 

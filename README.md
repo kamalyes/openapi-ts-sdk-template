@@ -81,6 +81,7 @@ kopy new https://github.com/kamalyes/openapi-ts-sdk-template -o ./kronos-api-sdk
   --var SwaggerUrl=https://petstore3.swagger.io/api/v3/openapi.json \
   --var TokenEnvName=OPENAPI_TOKEN \
   --var ApiBasePath=https://api.example.com \
+  --var ProtoRepo=kamalyes/demo-share-proto \
   --var NodeVersion=22 \
   --var BaseBranch=master \
   --var NpmRegistry=https://registry.npmjs.org \
@@ -136,6 +137,7 @@ git init && git add -A && git commit -m "chore: bootstrap sdk"
 | `SwaggerUrl` | string | `https://api.example.com/openapi.json` | **远程** OpenAPI 文档地址 |
 | `TokenEnvName` | string | `OPENAPI_TOKEN` | 拉取文档时读取 Bearer Token 的环境变量名 |
 | `ApiBasePath` | string | 空 \| empty | 导出的 `DEFAULT_BASE_PATH`，留空则由调用方传 |
+| `ProtoRepo` | string | 空 \| empty | 协议中心仓库 `owner/repo`（由 kronos-share-proto-template 生成）；填了才接上「协议发版 → SDK 自动重新生成」这条链路，可被仓库变量 `PROTO_REPO` 覆盖 |
 | `NodeVersion` | select | `22` | 写入 `engines`、`.nvmrc`、`@types/node`、CI |
 | `BaseBranch` | select | `master` | CI 触发分支与 changesets 基线 |
 | `NpmRegistry` | string | `https://registry.npmjs.org` | `.npmrc` 与 `publishConfig.registry` |
@@ -185,6 +187,7 @@ openapi-ts-sdk-template/
 ├── .github/                    # 全部带 .tpl，渲染时去掉（原因见「模板渲染机制」）
 │   ├── workflows/ci.yml.tpl    # lint / typecheck / test / build
 │   ├── workflows/release.yml.tpl  # changesets 发布 | release pipeline
+│   ├── workflows/sync-contract.yml.tpl  # 协议中心发版后自动重新生成并写 changeset
 │   └── dependabot.yml.tpl      # 依赖更新 | dependency updates
 ├── .claude/skills/openapi-sdk/ # 生成项目的 Claude Code 技能 | project skill
 └── .vscode/                    # 编辑器推荐配置 | editor settings
@@ -290,6 +293,55 @@ contain the substring `readme.tpl`, so rule 2 leaves it alone — naming it some
 > Watch out for name clashes: the generated code already exports `Configuration`,
 > `RequestArgs` and `AxiosLikeInstance`; colliding `export *` names trigger TS2308.
 
+## 🔗 三个仓库怎么串起来 | How the three repositories connect
+
+这个模板不是孤立的，它是一条链路的末端。填上 `ProtoRepo` 之后整条链路自动跑通：
+
+[EN] This template is the tail of a chain rather than a standalone thing. Fill in `ProtoRepo` and
+the whole chain runs by itself:
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ kronos-share-proto-template → 生成「协议中心」仓库                             │
+│   proto 是唯一真相源，产出：                                                   │
+│     pb/**                      Go 结构体与 gRPC stub（入库）                   │
+│     proto/**/*.swagger.yaml    按模块拆分的 OpenAPI 文档（入库）                │
+│     docs/openapi.swagger.yaml  全部模块合并的聚合文档（入库）                   │
+│   release.yml 发版：校验 → 打 tag → Release 附带聚合文档 → 通知下游             │
+└────────────────┬────────────────────────────────────┬────────────────────────┘
+                 │ go get <module>@vX.Y.Z             │ repository_dispatch
+                 ▼                                    ▼
+┌────────────────────────────────┐   ┌──────────────────────────────────────────┐
+│ Go 业务服务仓库                  │   │ openapi-ts-sdk-template → 生成 SDK 仓库    │
+│  用 pb 里的 stub 实现 gRPC      │   │  sync-contract.yml 收到通知后：            │
+│  proto-sync.yml 自动升级依赖     │   │   拉聚合文档 → pnpm generate → 验证        │
+│  （模板在协议中心的 docs/ 下）    │   │   → 写 changeset → 发 npm                 │
+└────────────────────────────────┘   └──────────────────────────────────────────┘
+                                                      │
+                                                      ▼
+                                          ┌────────────────────────┐
+                                          │ 前端 / Node 服务        │
+                                          │  npm i @scope/xxx-sdk  │
+                                          └────────────────────────┘
+```
+
+`openapi-generator-ts-cli` 在这条链路里是被本模板调用的生成器，它既能吃协议中心的聚合文档，
+也能吃任何一个跑着的服务暴露的 `/openapi.json`，两种用法共用同一套 `openapi.config.mjs`。
+
+[EN] `openapi-generator-ts-cli` is the generator this template drives. It accepts both the hub's
+aggregated document and any running service's `/openapi.json`, through the same
+`openapi.config.mjs`.
+
+### 接线清单 | Wiring checklist
+
+| 步骤 \| Step | 在哪做 \| Where |
+| --- | --- |
+| 1. 生成协议中心 | `kopy new .../kronos-share-proto-template`，填 `SdkRepo` 为本 SDK 仓库 |
+| 2. 生成 SDK 仓库 | `kopy new .../openapi-ts-sdk-template`，填 `ProtoRepo` 为协议中心仓库 |
+| 3. 配 GitHub App | 两边都配 `OPS_CLI_APP_ID` / `OPS_CLI_APP_PRIVATE_KEY`（跨仓库通知必需）|
+| 4. 配 npm token | SDK 仓库配 `NPM_TOKEN` |
+| 5. 验证 | 协议中心跑一次 Release Contract，看 SDK 仓库是否自动起了 Sync Contract |
+
 ## 🧩 与生成器的分工 | Division of labour
 
 | 职责 \| Responsibility | 归属 \| Owner |
@@ -298,6 +350,7 @@ contain the substring `readme.tpl`, so rule 2 leaves it alone — naming it some
 | 远程文档地址、鉴权、生成参数编排 | 本模板的 `openapi.config.mjs` + `scripts/` |
 | 超时、重试、错误语义、钩子 | 本模板的 `src/http.ts` |
 | 构建、测试、lint、版本、发布 | 本模板的工程化配置 |
+| 协议版本、聚合文档、发版通知 | 协议中心（kronos-share-proto-template 生成的仓库）|
 
 生成代码的问题请修生成器或远程文档，不要改 `src/generated/`
 Fix generator or document issues upstream; never patch `src/generated/`.

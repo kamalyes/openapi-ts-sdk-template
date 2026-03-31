@@ -71,7 +71,10 @@ typecheck 也不能 build，等于没有质量门禁把它提交进来还有两�
 │   └── index.ts                # 包入口
 ├── tests/                      # 手写层单测
 ├── .changeset/                 # 版本与变更说明
-├── .github/workflows/          # CI 与发布流程
+├── .github/workflows/          # CI / 发布 / 协议同步
+│   ├── ci.yml                  # lint / typecheck / test / build
+│   ├── release.yml             # changesets 两段式发布到 npm
+│   └── sync-contract.yml       # 协议中心发版后自动重新生成
 ├── README.md                   # 中文说明（本文件）
 └── README.en.md                # 英文说明
 ```
@@ -194,6 +197,26 @@ pnpm generate
 OPENAPI_URL=http://127.0.0.1:8080/openapi.json pnpm generate
 ```
 
+### 从协议中心的 release 生成
+
+输入是协议中心某个发布版本的聚合文档，而不是某个跑着的服务：
+
+```bash
+# 取某个版本的聚合文档资产地址（gh 需要能读协议中心仓库）
+ASSET=$(gh api repos/[[ .ProtoRepo ]]/releases/tags/v1.2.0 \
+  --jq '.assets[] | select(.name == "openapi.swagger.yaml") | .url')
+
+OPENAPI_URL="$ASSET" \
+OPENAPI_ACCEPT=application/octet-stream \
+[[ .TokenEnvName ]]="$(gh auth token)" \
+  pnpm generate
+```
+
+`OPENAPI_ACCEPT` 是必须的：GitHub 的资产 API 地址默认返回的是资产的 JSON 元信息，
+带上 `application/octet-stream` 才会返回文档本身
+
+CI 里这件事是自动的，见下一节
+
 ### 接口漂移检查
 
 ```bash
@@ -225,6 +248,60 @@ git commit -am "feat: add order api" && git push
 `.npmrc` 与 `package.json` 的 `publishConfig.registry` 都指向 `[[ .NpmRegistry ]]`
 注意：npm provenance 只在 npmjs.org 可用，发私服时请把 `publishConfig.provenance`
 改为 `false`，否则 publish 会失败
+
+## 🔗 与协议中心联动
+
+填了模板变量 `ProtoRepo`（或仓库变量 `PROTO_REPO`）之后，这个 SDK 就不只是「对着一个 URL
+生成代码」，而是挂在协议中心的发布流水线上：
+
+```text
+  协议中心（share-proto）跑 Release Contract 发版
+            │
+            │  repository_dispatch(proto-released)
+            │  payload 带上版本号、模块路径和这次是 major/minor/patch
+            ▼
+  本仓库 sync-contract.yml
+            ├─ 1. 解析该 release 的 openapi.swagger.yaml 资产地址
+            ├─ 2. pnpm generate 重新生成 src/generated
+            ├─ 3. lint / typecheck / test / build 自证可用
+            ├─ 4. 无变化就到此为止；有变化则写一个 changeset 并提交到主干
+            └─ 5. 唤起 release.yml
+                      ▼
+            changesets 开「version packages」PR → 合并后发 npm
+```
+
+### 为什么要写 changeset 而不是直接 publish
+
+changesets 的两段式发布是这个仓库唯一的发版口径，版本号与 CHANGELOG 都由它生成。
+绕过去直接 publish 会让 CHANGELOG 缺一条记录，而「这个 SDK 版本对应哪个协议版本」
+恰恰是出问题时最先要查的东西。走 changeset 之后，npm 上每个版本都能回溯到具体的协议 tag：
+
+```markdown
+## 1.0.0
+
+### Major Changes
+
+- 同步协议 `[[ .ProtoRepo ]]@v2.0.0`，重新生成 `src/generated`
+```
+
+版本级别也不用猜：协议中心在 dispatch 里带了 `bump`，协议的破坏性变更会直接变成 SDK 的
+major，不会出现「协议都改不兼容了，SDK 还在发 minor」。
+
+### 需要的配置
+
+| 配置项 | 类型 | 说明 |
+| --- | --- | --- |
+| `PROTO_REPO` | 仓库变量 | 协议中心仓库 `owner/repo`；覆盖模板变量 `ProtoRepo` |
+| `OPS_CLI_APP_ID` | 仓库 Secret | 协议中心是私有仓库时必须配，用于读它的 release |
+| `OPS_CLI_APP_PRIVATE_KEY` | 仓库 Secret | 同上的私钥 |
+| `NPM_TOKEN` | 仓库 Secret | 发 npm 用（发布流程本来就需要）|
+
+协议中心那一侧要把本仓库填进它的 `SDK_REPO` 变量，否则它不知道该通知谁
+
+### 手动补一次同步
+
+Actions → Sync Contract → 填版本号（或 `latest`）即可，用于协议中心通知失败后补跑，
+或者第一次接线时验证链路
 
 ## 🧰 脚本速览
 
