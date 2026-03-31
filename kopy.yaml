@@ -2,7 +2,7 @@
 # kopy 模板配置 | kopy template configuration
 #
 # 用法 | Usage:
-#   kopy new @kamalyes/openapi-ts-sdk-template -o ./my-api-sdk
+#   kopy new https://github.com/kamalyes/openapi-ts-sdk-template -o ./my-api-sdk
 #   kopy list ./openapi-ts-sdk-template          # 查看全部变量 | inspect variables
 #
 # 渲染规则 | Rendering rules:
@@ -163,6 +163,19 @@ ignore:
 # never touches the English template.
 # ============================================================================
 rename:
+  # 工作流与 dependabot 配置在模板仓库里带 .tpl 后缀，渲染时去掉。
+  # 原因：GitHub Actions 会解析模板仓库自己的 .github/workflows/*.yml，而里面的
+  # 占位符还没渲染（branches: - [[ .BaseBranch ]] 会被 YAML 读成嵌套序列，直接报
+  # "A sequence was not expected"），模板仓库会一直挂着无效工作流的红叉。
+  # 加 .tpl 后 GitHub 既不解析也不触发它们，生成项目里又能正常还原。
+  #
+  # [EN] Workflow and dependabot files carry a .tpl suffix inside the template repository and
+  # lose it on render. GitHub Actions parses .github/workflows/*.yml of the template repo
+  # itself, where placeholders are still unrendered: `branches: - [[ .BaseBranch ]]` parses as
+  # a nested sequence and fails with "A sequence was not expected". With .tpl, GitHub neither
+  # parses nor triggers them, while the generated project still gets working files.
+  - pattern: ".yml.tpl"
+    value: ".yml"
   - pattern: "README.md"
     value: "__kopy_template_doc__"
   - pattern: "readme.tpl"

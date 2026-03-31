@@ -66,10 +66,10 @@ npm install -g pnpm
 
 ```bash
 # 交互式：逐项确认变量 | interactive
-kopy new @kamalyes/openapi-ts-sdk-template -o ./kronos-api-sdk
+kopy new https://github.com/kamalyes/openapi-ts-sdk-template -o ./kronos-api-sdk
 
 # 非交互：用 --var 跳过全部提问 | non-interactive
-kopy new @kamalyes/openapi-ts-sdk-template -o ./kronos-api-sdk \
+kopy new https://github.com/kamalyes/openapi-ts-sdk-template -o ./kronos-api-sdk \
   --var OrgName=kamalyes \
   --var ProjectName=kronos-api-sdk \
   --var PkgScope=kamalyes \
@@ -92,6 +92,17 @@ kopy new ./openapi-ts-sdk-template -o /tmp/preview --dry-run
 # 查看全部变量与默认值 | list variables and defaults
 kopy list ./openapi-ts-sdk-template
 ```
+
+> ⚠️ 必须用完整的 Git 地址。kopy README 里写的 `@owner/repo` 简写在当前版本**并未实现**：
+> `source.isGitURL` 只认 `https://` / `http://` / `git@` / `git://` 或 `.git` 结尾，
+> 传 `@kamalyes/xxx` 会被当成本地路径，报「访问模板源路径失败」。
+> 带分支就用 `https://github.com/owner/repo#branch`。
+>
+> [EN] Use the full Git URL. The `@owner/repo` shorthand documented in kopy's README is not
+> implemented in the current release: `source.isGitURL` only accepts `https://`, `http://`,
+> `git@`, `git://` or a `.git` suffix, so `@kamalyes/xxx` is treated as a local path and fails
+> with "访问模板源路径失败". Append `#branch` to the URL to pick a branch.
+
 
 ### 初始化生成出来的项目 | Bootstrap the output
 
@@ -171,10 +182,10 @@ openapi-ts-sdk-template/
 │   └── generated/index.ts      # 占位文件，generate 后被覆盖 | placeholder
 ├── tests/                      # 手写层单测 | tests for the hand-written layer
 ├── .changeset/config.json      # changesets 配置 | changesets config
-├── .github/
-│   ├── workflows/ci.yml        # lint / typecheck / test / build
-│   ├── workflows/release.yml   # changesets 发布 | release pipeline
-│   └── dependabot.yml          # 依赖更新 | dependency updates
+├── .github/                    # 全部带 .tpl，渲染时去掉（原因见「模板渲染机制」）
+│   ├── workflows/ci.yml.tpl    # lint / typecheck / test / build
+│   ├── workflows/release.yml.tpl  # changesets 发布 | release pipeline
+│   └── dependabot.yml.tpl      # 依赖更新 | dependency updates
 ├── .claude/skills/openapi-sdk/ # 生成项目的 Claude Code 技能 | project skill
 └── .vscode/                    # 编辑器推荐配置 | editor settings
 ```
@@ -192,6 +203,24 @@ Behaviours discovered while writing this template — read before editing it:
 | ignore 匹配 | 精确 / 前缀 `dir/` / 后缀 `*.ext` / 路径段 | `*.md` 会连子目录里的 md 一起忽略 |
 | hooks | 当前版本**不执行** | 初始化步骤只能写进文档让人手动跑 |
 | 内置变量 | 只有 `Year` | 其余信息都要显式定义成 question |
+
+### 为什么工作流带 .tpl 后缀 | Why the workflows carry a .tpl suffix
+
+GitHub Actions 会解析仓库里所有 `.github/workflows/*.yml`，**包括模板仓库自己的那份**。
+模板里的占位符还没渲染，`branches: - [[ .BaseBranch ]]` 会被 YAML 读成嵌套序列，
+GitHub 直接报 `A sequence was not expected`，模板仓库就一直挂着无效工作流的红叉。
+
+加 `.tpl` 后 GitHub 不再把它们当工作流（既不解析也不触发），kopy 的 rename 规则
+`.yml.tpl` → `.yml` 会在生成项目里还原。`dependabot.yml` 同样处理：否则 Dependabot
+会去更新模板里那份带占位符的 `package.json`，并对模板仓库自己提 PR。
+
+[EN] GitHub Actions parses every `.github/workflows/*.yml` in a repository, the template's
+own included. With placeholders unrendered, `branches: - [[ .BaseBranch ]]` parses as a nested
+sequence and GitHub reports `A sequence was not expected`, leaving the template repo with a
+permanently failing check. The `.tpl` suffix makes GitHub ignore them entirely, while the
+`.yml.tpl` → `.yml` rename rule restores them in the generated project. `dependabot.yml` gets
+the same treatment, or Dependabot would try to update the placeholder `package.json` and open
+pull requests against the template itself.
 
 ### 三份 README 的分工 | Three READMEs, three audiences
 
