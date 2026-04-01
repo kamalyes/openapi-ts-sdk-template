@@ -22,6 +22,28 @@ delimiters:
   - "[["
   - "]]"
 
+# ----------------------------------------------------------------------------
+# ⚠️ 默认值必须是字面量，不能引用别的变量 | Defaults must be literals
+#
+# kopy 渲染 default 时变量上下文是空的，实测（全部回车接受默认）：
+#   PkgName      default "[[ .ProjectName ]]"  →  <no value>
+#   PkgFullName  default 带 if 的派生式        →  <no value>
+#   GeneratorDep default 引用 .OrgName         →  .../<no value>/openapi-generator-ts-cli.git
+# 于是生成项目的 package.json 里 "name": "<no value>"、依赖地址也是坏的，
+# 连 pnpm install 都跑不起来。
+#
+# 所以 PkgName / PkgFullName / GeneratorDep 的默认值写死成与 OrgName=kamalyes、
+# ProjectName=my-api-sdk、PkgScope=kamalyes 自洽的一套；改这三项时要一起改，
+# 不会自动跟着变。
+#
+# [EN] kopy renders each default with an EMPTY variable context, so a default referencing
+# another variable yields "<no value>" (verified by accepting every default). That shipped a
+# package.json with "name": "<no value>" and a broken git dependency URL, so the generated
+# project could not even install. The three derived defaults are therefore hardcoded to a set
+# consistent with OrgName=kamalyes, ProjectName=my-api-sdk and PkgScope=kamalyes, and must be
+# changed together with them.
+# ----------------------------------------------------------------------------
+
 questions:
   # --------------------------------------------------------------------------
   # 身份信息 | Identity
@@ -46,13 +68,13 @@ questions:
   - name: PkgName
     prompt: "npm 包名主体（不含 scope）| npm package name without scope"
     type: string
-    default: "[[ .ProjectName ]]"
+    default: "my-api-sdk"
     required: true
 
   - name: PkgFullName
     prompt: "npm 完整包名（发布时真正使用的名字）| Full npm package name used when publishing"
     type: string
-    default: "[[ if .PkgScope ]]@[[ .PkgScope ]]/[[ end ]][[ .PkgName ]]"
+    default: "@kamalyes/my-api-sdk"
     required: true
 
   - name: Description
@@ -171,7 +193,7 @@ questions:
   - name: GeneratorDep
     prompt: "生成器依赖源（openapi-generator-ts-cli 未发布 npm 时用 git dist 分支）| Install source of openapi-generator-ts-cli"
     type: string
-    default: git+https://github.com/[[ .OrgName ]]/openapi-generator-ts-cli.git#dist
+    default: git+https://github.com/kamalyes/openapi-generator-ts-cli.git#dist
     required: true
 
 # ============================================================================
