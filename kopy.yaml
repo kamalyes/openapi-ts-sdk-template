@@ -138,6 +138,30 @@ questions:
     choices: ["master", "main"]
     default: "master"
 
+  # --------------------------------------------------------------------------
+  # AI 协作工具 | AI coding assistant
+  #
+  # 维护指南 skill 在模板里只有一份正文（__ai_home__/），渲染时按这里的选择落到
+  # 对应工具的目录。各家读取位置不同：Trae 读 .trae/，Claude Code 读 .claude/，
+  # Cursor 读 .cursor/，VS Code 系扩展读 .vscode/。
+  #
+  # 为什么用「目录名」而不是「选哪些、删哪些」：kopy 的 ignore 匹配的是未渲染的
+  # rename 值，模板化的 value 渲染后即便等于跳过标记，ignore 也不会命中（已实测），
+  # 所以条件性删目录这条路在当前版本不存在。换工具时改目录名即可，不必重新渲染。
+  # 与 kronos-share-proto-template 的 AiAssistant 保持同一套取值与默认值。
+  #
+  # [EN] The maintenance skill exists once in the template, under __ai_home__/, and lands in
+  # the directory the chosen assistant reads. The choice is a directory NAME rather than
+  # "which trees to keep", because kopy matches `ignore` against the UNRENDERED rename value
+  # (verified). Renaming the directory later is enough. Same choices and default as
+  # kronos-share-proto-template.
+  # --------------------------------------------------------------------------
+  - name: AiAssistant
+    prompt: "AI 协作工具目录（维护指南 skill 落到哪）| Directory of the AI coding assistant that reads the skill"
+    type: select
+    choices: [".trae", ".claude", ".cursor", ".vscode"]
+    default: ".trae"
+
   - name: NpmRegistry
     prompt: "npm registry（私服请填写私服地址）| npm registry, use your mirror for private hosting"
     type: string
@@ -206,6 +230,8 @@ rename:
     value: "README.md"
   - pattern: "readme-en.tpl"
     value: "README.en.md"
+  - pattern: "__ai_home__"
+    value: "[[ .AiAssistant ]]"
   - pattern: "__project_name__"
     value: "[[ .ProjectName ]]"
   - pattern: "__pkg_name__"

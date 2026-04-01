@@ -189,7 +189,8 @@ openapi-ts-sdk-template/
 │   ├── workflows/release.yml.tpl  # changesets 发布 | release pipeline
 │   ├── workflows/sync-contract.yml.tpl  # 协议中心发版后自动重新生成并写 changeset
 │   └── dependabot.yml.tpl      # 依赖更新 | dependency updates
-├── .claude/skills/openapi-sdk/ # 生成项目的 Claude Code 技能 | project skill
+├── __ai_home__/                # AI 规范唯一正文，渲染时改名成 .trae / .claude / .cursor / .vscode
+│   └── skills/openapi-sdk/     # 生成项目的维护指南 skill | project skill
 └── .vscode/                    # 编辑器推荐配置 | editor settings
 ```
 
