@@ -47,7 +47,7 @@ jobs:
           fetch-depth: 0
 
       - name: 安装 pnpm | Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10
 
