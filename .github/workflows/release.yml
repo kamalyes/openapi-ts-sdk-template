@@ -42,7 +42,7 @@ jobs:
       # fetch-depth: 0 让 changesets 能读到完整历史，否则无法判断变更范围
       # Full history lets changesets determine what changed
       - name: 拉取代码 | Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
