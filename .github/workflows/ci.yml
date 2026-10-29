@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 拉取代码 | Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: 安装 pnpm | Setup pnpm
         uses: pnpm/action-setup@v4
