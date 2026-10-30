@@ -1,0 +1,311 @@
+name: Verify Template
+
+run-name: 🧪 [verify] by @${{ github.actor }} • ${{ github.sha }}
+
+# 这个工作流操作的是「模板仓库自己」，不是生成出来的 SDK
+#
+# ci.yml.tpl / release.yml.tpl / sync-contract.yml.tpl 带 .tpl 后缀，是给生成出来的
+# SDK 用的，里面的占位符要等渲染才合法。这一个没有占位符，由模板仓库自己执行，
+# 因此不加后缀；同时它被 kopy.yaml 的 ignore 排除，不会被复制进生成出来的仓库。
+#
+# [EN] This workflow acts on the template repository itself. The .tpl workflows target the
+# generated SDK, where placeholders are only valid after rendering; this one has none, runs
+# here, and is excluded by kopy.yaml's ignore list.
+
+# ============================================================================
+# 它拦的是什么
+# ============================================================================
+# 这个模板最容易坏的地方和 Go 模板不同——它的产物要经过「拉远程文档 → 代码生成
+# → 类型检查 → 构建」四步，每一步都可能在渲染正确的前提下失败：
+#
+#   派生默认值渲染出坏的包名（历史上发生过，见 61c9a3f）→ package.json 无效，
+#     但渲染本身不报错
+#   契约文档地址不可达或结构变了 → 生成出空的 client，typecheck 照样过
+#     （没有接口就没有类型错误），直到有人去调它才发现
+#   生成器版本漂移 → 产出的代码风格变了，lint 失败
+#
+# 所以必须一路跑到 build 和 test，光渲染什么都证明不了。
+#
+# [EN] This template breaks differently from the Go ones: its output passes through fetching a
+# remote document, code generation, type checking and a build, and each can fail with the render
+# itself correct. A derived default can render an invalid package name, which has happened, and
+# the render raises no error. An unreachable or restructured contract yields an empty client
+# that still type-checks, because no API means no type errors, until somebody calls it. A drifted
+# generator version changes the output's style and fails lint. Rendering alone proves nothing.
+
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - '**.md'
+      - 'readme*.tpl'
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: verify-template-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: 🧪 Render & Build (${{ matrix.label }})
+    runs-on: ubuntu-latest
+    strategy:
+      # 一个组合失败时别掐掉其它组合：模板出问题往往不只影响一个
+      # [EN] One failure must not cancel the others
+      fail-fast: false
+      matrix:
+        include:
+          - label: "默认（协议中心 build 分支）"
+            vars: ""
+          # 用一个与本套模板无关的公开文档再跑一遍，验证工具链本身不依赖
+          # 协议中心的任何特殊结构。只测默认值的话，万一生成器对我们的 spec
+          # 有隐式假设，换别人的文档就炸，而那正是用户第一次换 SwaggerUrl 时。
+          #
+          # [EN] A second run against an unrelated public document verifies the toolchain does
+          # not depend on anything specific to our hub. Testing only the default would hide an
+          # implicit assumption about our spec, which would surface the first time a user points
+          # SwaggerUrl elsewhere.
+          - label: "外部文档（Petstore）"
+            vars: "--var SwaggerUrl=https://petstore3.swagger.io/api/v3/openapi.json --var ProtoRepo="
+
+    steps:
+      - name: ⬇️ Checkout Template
+        uses: actions/checkout@v6
+
+      - name: 📦 Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # 不能用 node-version-file: .nvmrc —— 模板里那是占位符不是版本号。
+          # 与 kopy.yaml 里 NodeVersion 的默认值保持一致。
+          # [EN] node-version-file cannot be used, because the template's .nvmrc holds a
+          # placeholder. Keep this in step with the NodeVersion default
+          node-version: '22'
+
+      - name: 🐹 Setup Go (for kopy)
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+
+      - name: 🔧 Install kopy
+        run: go install github.com/kamalyes/kopy@latest
+
+      - name: 🎨 Render Template
+        run: kopy new . -o /tmp/rendered -y --hooks never ${{ matrix.vars }}
+
+      - name: 🔍 Check For Unrendered Placeholders
+        run: |
+          set -euo pipefail
+          # <no value> 是 kopy 对「引用了不存在的变量」的渲染结果，它不报错。
+          # 在 TS 里这尤其危险：它可能落进 package.json 的字段里，
+          # 产出一个安装不了的包，而问题要到 npm publish 才暴露。
+          #
+          # [EN] <no value> is what kopy renders for a missing variable and raises no error. In
+          # TypeScript it is worse: it can land in a package.json field and produce a package
+          # that cannot be installed, which only surfaces at publish time.
+          if grep -rIl --exclude-dir=.git --exclude-dir=node_modules '<no value>' /tmp/rendered 2>/dev/null | head -5 | grep -q .; then
+            echo "::error::渲染结果里有 <no value>，说明引用了 kopy.yaml 里没定义的变量"
+            grep -rIn --exclude-dir=.git --exclude-dir=node_modules '<no value>' /tmp/rendered | head -20
+            exit 1
+          fi
+          # 本模板的分隔符是 [[ ]]，不是 <% %>
+          # [EN] This template's delimiters are [[ ]] rather than <% %>
+          if grep -rIl --exclude-dir=.git --exclude-dir=node_modules -e '\[\[' /tmp/rendered 2>/dev/null | head -5 | grep -q .; then
+            echo "::error::渲染结果里有未处理的 [[ 分隔符"
+            grep -rIn --exclude-dir=.git --exclude-dir=node_modules -e '\[\[' /tmp/rendered | head -20
+            exit 1
+          fi
+          echo "✅ 没有未渲染的占位符"
+
+      - name: 🧾 Validate package.json
+        working-directory: /tmp/rendered
+        run: |
+          set -euo pipefail
+          # package.json 必须是合法 JSON 且 name 符合 npm 规则。
+          # 派生默认值出错时最常见的产物就是一个坏 name（历史上发生过），
+          # 而 pnpm install 对某些坏 name 会给出很难懂的错误。
+          # [EN] package.json must be valid JSON with an npm-legal name. A broken name is the
+          # most common artifact of a faulty derived default, and pnpm's error for some of them
+          # is hard to read
+          node -e '
+            const p = require("/tmp/rendered/package.json");
+            const re = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
+            if (!p.name || !re.test(p.name)) {
+              console.error("::error::package.json 的 name 不合法: " + JSON.stringify(p.name));
+              process.exit(1);
+            }
+            if (!p.version) { console.error("::error::package.json 缺少 version"); process.exit(1); }
+            console.log("✅ package name:", p.name, "version:", p.version);
+          '
+
+      - name: 📥 Install Dependencies
+        working-directory: /tmp/rendered
+        # 不用 --frozen-lockfile：模板不带 lockfile（它会随渲染出的包名变化），
+        # 所以这里就是首次解析依赖。这也顺便验证了 package.json 的依赖声明可解析。
+        # [EN] No frozen lockfile, since the template ships none; this is the first resolution and
+        # also verifies the dependency declarations resolve at all
+        run: pnpm install --no-frozen-lockfile
+
+      - name: 🔨 Generate API Client
+        working-directory: /tmp/rendered
+        run: pnpm generate
+
+      - name: 🔍 Check Generated Output Is Not Empty
+        working-directory: /tmp/rendered
+        run: |
+          set -euo pipefail
+          # 生成出空 client 时后续每一步都会通过：没有接口就没有类型错误、
+          # 没有代码可 lint、构建产物也是合法的空包。所以必须显式检查。
+          # 这是「契约地址不可达」和「spec 结构变了」唯一会露头的地方。
+          #
+          # [EN] An empty client passes every later step: no API means no type errors, nothing to
+          # lint and a valid empty bundle. This explicit check is the only place an unreachable
+          # contract or a restructured spec shows itself.
+          count=$(find src/generated -name '*.ts' | wc -l | tr -d ' ')
+          echo "生成的 .ts 文件数: ${count}"
+          if [ "${count}" -lt 2 ]; then
+            echo "::error::src/generated 下几乎没有产物（${count} 个文件）——契约地址不可达或 spec 结构不符"
+            ls -R src/generated || true
+            exit 1
+          fi
+
+      - name: 🧪 Typecheck, Lint, Build, Test
+        working-directory: /tmp/rendered
+        run: |
+          set -euo pipefail
+          pnpm typecheck
+          pnpm lint
+          pnpm build
+          pnpm test
+
+  publish:
+    name: 📦 Publish Build Branch
+    needs: verify
+    # 只在 master 推送时发布，PR 不发布：PR 上发布会让任何人的 PR 都能改写
+    # build 分支，而那是别人直接安装的东西
+    # [EN] Push to master only; a PR publish would let any PR rewrite the branch people install
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout Template
+        uses: actions/checkout@v6
+
+      - name: 📦 Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 🐹 Setup Go (for kopy)
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+
+      - name: 🔧 Install kopy
+        run: go install github.com/kamalyes/kopy@latest
+
+      - name: 🎨 Render With Defaults
+        run: kopy new . -o /tmp/rendered -y --hooks never
+
+      - name: 🔨 Install, Generate & Build
+        working-directory: /tmp/rendered
+        run: |
+          set -euo pipefail
+          pnpm install --no-frozen-lockfile
+          pnpm generate
+          pnpm build
+
+      - name: 📦 Publish To Build Branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          BUILD_DIR=/tmp/build-branch
+          git clone --depth 1 --branch build \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "$BUILD_DIR" 2>/dev/null || {
+              echo "build 分支不存在，新建一个空分支"
+              git clone --depth 1 \
+                "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+                "$BUILD_DIR"
+              git -C "$BUILD_DIR" checkout --orphan build
+              git -C "$BUILD_DIR" rm -rf . >/dev/null 2>&1 || true
+            }
+
+          # 排除三样：
+          #   .git           分支自己的历史
+          #   .github        build 分支不跑 CI；且 GitHub 把 workflows/ 下所有文件都当
+          #                  workflow 判权限，缺 workflows 权限的凭据推不上去
+          #   node_modules   几百兆的依赖，不该进 git
+          #
+          # 保留 dist/：build 分支的意义就是「装了就能用」，
+          # 所以构建产物必须在里面——否则装它的人还得自己跑一次构建，
+          # 而他们装的时候未必有 pnpm 和生成器。
+          #
+          # [EN] Excluded: .git, .github, because the build branch runs no CI and GitHub treats
+          # everything under workflows/ as a workflow for permission purposes, and node_modules.
+          # dist/ is kept deliberately: the branch exists to be installable, so the built output
+          # must be in it, or whoever installs has to build it themselves without necessarily
+          # having pnpm and the generator.
+          rsync -a --delete \
+            --exclude '.git' --exclude '.github' --exclude 'node_modules' \
+            /tmp/rendered/ "$BUILD_DIR/"
+
+          cd "$BUILD_DIR"
+
+          # dist/ 和 src/generated/ 在模板的 .gitignore 里被忽略，
+          # 但 build 分支恰恰要带上它们——这才是「装了就能用」的全部意义。
+          # 用 -f 强制加入，而不是改 .gitignore：改了会让 master 也跟着提交构建产物。
+          #
+          # [EN] dist/ and src/generated/ are gitignored in the template yet are exactly what the
+          # build branch needs. Forced in rather than editing .gitignore, which would make master
+          # commit build output too.
+          git add -A
+          git add -f dist src/generated 2>/dev/null || true
+
+          if git diff --cached --quiet; then
+            echo "✅ 生成结果与 build 分支一致，跳过发布"
+            {
+              echo "### 📦 Publish Build Branch"
+              echo
+              echo "**结果**：无变更，跳过发布"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          git diff --cached --stat | tail -30
+
+          git commit \
+            -m "📦 build: 由 ${GITHUB_SHA::7} 渲染生成" \
+            -m "本分支由 .github/workflows/verify-template.yml 自动维护，请勿手工提交——下一次发布会被整体覆盖。" \
+            -m "模板源码在 master。这里是按默认变量渲染、生成并构建过的 SDK，含 dist/ 与 src/generated/，可以直接安装使用。"
+
+          git push origin build
+
+          {
+            echo "### 📦 Publish Build Branch"
+            echo
+            echo "**来源**：\`${GITHUB_SHA::7}\`"
+            echo
+            echo "直接安装："
+            echo '```'
+            echo "pnpm add github:${GITHUB_REPOSITORY}#build"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

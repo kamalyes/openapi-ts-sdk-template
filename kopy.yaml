@@ -105,9 +105,35 @@ questions:
   # Add more services to the `sources` array in openapi.config.mjs.
   # --------------------------------------------------------------------------
   - name: SwaggerUrl
-    prompt: "远程 OpenAPI 文档地址（默认是 Swagger 官方 Petstore 示例，可直接跑通后再换成你自己的）| Remote OpenAPI document URL, defaults to the public Swagger Petstore spec"
+    prompt: "远程 OpenAPI 文档地址 | Remote OpenAPI document URL"
     type: string
-    default: https://petstore3.swagger.io/api/v3/openapi.json
+    # 默认指向协议中心模板 build 分支上的聚合 OpenAPI 文档。
+    #
+    # 为什么是这个而不是 Petstore：这套模板是配套的——协议中心定义接口，
+    # 服务实现它，这个 SDK 消费它的文档，web 项目再用这个 SDK。
+    # 默认值指向 Petstore 的话链路是断的：SDK 生成出来的是宠物店接口，
+    # 和同一套模板生成的服务对不上，演示时得手工改一次 URL 再重新生成。
+    #
+    # build 分支是协议中心 CI 渲染 + protoc 生成 + 验证后的产物，
+    # docs/openapi.swagger.yaml 是它把各模块 swagger 合并后的单文件
+    # （当前 21 个 path，含 catalog / inventory / tenant / key 四个模块）。
+    # 它的 master 全是 kopy 占位符，拉不到可用的文档。
+    #
+    # 换成自己的协议中心时改成对应仓库的 raw 地址；
+    # 想先用一个与本套模板无关的公开文档跑通工具链，可以填
+    # https://petstore3.swagger.io/api/v3/openapi.json
+    #
+    # [EN] Points at the aggregated OpenAPI document on the contract-hub template's build
+    # branch rather than Petstore, because these templates are a set: the hub defines the APIs,
+    # a service implements them, this SDK consumes the document and a web project uses the SDK.
+    # A Petstore default breaks that chain, producing a pet-store client that does not match the
+    # services generated from the same set and forcing a manual URL change before any demo. The
+    # build branch is what the hub's CI renders, generates and verifies, and
+    # docs/openapi.swagger.yaml is its merged single file, currently 21 paths across four
+    # modules; its master is all placeholders and yields no usable document. Point this at your
+    # own hub's raw URL for a real project, or at the Petstore spec to exercise the toolchain
+    # against something unrelated to this set.
+    default: https://raw.githubusercontent.com/kamalyes/kronos-share-proto-template/build/docs/openapi.swagger.yaml
     required: true
 
   - name: TokenEnvName
@@ -141,9 +167,17 @@ questions:
   # service's document and `pnpm generate` is run by hand
   # --------------------------------------------------------------------------
   - name: ProtoRepo
-    prompt: "协议中心仓库 owner/repo（由 kronos-share-proto-template 生成；留空则只按 SwaggerUrl 生成）| Contract-hub repository owner/repo"
+    prompt: "协议中心仓库 owner/repo（sync-contract 工作流据此监听契约变更；留空则只按 SwaggerUrl 生成）| Contract-hub repository owner/repo"
     type: string
-    default: ""
+    # 与 SwaggerUrl 的默认值同源：SwaggerUrl 指向这个仓库 build 分支上的文档，
+    # 这里填仓库本身，sync-contract 工作流据此在契约更新时自动重新生成。
+    # 两者不一致的现象是「契约变了但 SDK 不更新」——因为监听的是另一个仓库。
+    #
+    # [EN] The same source as SwaggerUrl, which points at this repository's build branch: the
+    # sync-contract workflow watches the repository named here and regenerates when the contract
+    # changes. A mismatch means the contract moves and the SDK does not, because the workflow is
+    # watching something else.
+    default: "kamalyes/kronos-share-proto-template"
 
   # --------------------------------------------------------------------------
   # 工程化选项 | Engineering options
@@ -203,6 +237,14 @@ questions:
 # These files serve the template repository itself and never reach the output.
 # ============================================================================
 ignore:
+  # verify-template.yml 只服务于模板仓库自己（渲染自身并发布 build 分支），
+  # 生成出来的 SDK 不需要它——那边没有 kopy.yaml，渲染步骤必然失败，
+  # 等于每个用户仓库都多一个永远红叉的工作流。
+  #
+  # [EN] verify-template.yml serves only the template repository. A generated SDK has no
+  # kopy.yaml, so its render step would always fail and every generated repository would carry a
+  # permanently failing workflow.
+  - ".github/workflows/verify-template.yml"
   - "kopy.yaml"
   # 模板自身的说明文档，改名后在此被忽略（见下方 rename 注释）
   # The template's own documentation, renamed then ignored (see rename below)
