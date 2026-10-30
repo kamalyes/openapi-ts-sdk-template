@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    // 生成代码使用无扩展名的相对导入（./configuration），只有 Bundler 解析能直接吃下，
+    // 最终产物由 tsup 打包，不依赖运行时的路径解析
+    "moduleResolution": "Bundler",
+    "types": ["node"],
+    "strict": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "noEmit": true
+  },
+  "include": ["src", "tests", "*.config.ts"],
+  "exclude": ["node_modules", "dist", "coverage"]
+}

@@ -1,0 +1,88 @@
+{
+  "name": "@kamalyes/my-api-sdk",
+  "version": "0.1.0",
+  "description": "Typed API SDK generated from remote OpenAPI documents",
+  "keywords": [
+    "openapi",
+    "swagger",
+    "sdk",
+    "typescript",
+    "api-client"
+  ],
+  "license": "Apache-2.0",
+  "author": "kamalyes <example@qq.com>",
+  "homepage": "https://github.com/kamalyes/my-api-sdk#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kamalyes/my-api-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kamalyes/my-api-sdk/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "README.en.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org"
+  },
+  "scripts": {
+    "generate": "node scripts/generate-api.mjs",
+    "generate:docs": "node scripts/generate-api.mjs --docs",
+    "generate:check": "node scripts/check-generated.mjs",
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "changeset": "changeset",
+    "version:packages": "changeset version",
+    "release": "pnpm build && changeset publish",
+    "prepublishOnly": "pnpm build"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.0",
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^3.2.0",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^10.0.0",
+    "globals": "^16.0.0",
+    "openapi-generator-ts-cli": "git+https://github.com/kamalyes/openapi-generator-ts-cli.git#dist",
+    "prettier": "^3.3.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^3.2.0"
+  }
+}
