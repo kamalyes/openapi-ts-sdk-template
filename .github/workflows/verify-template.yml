@@ -77,10 +77,27 @@ jobs:
       - name: ⬇️ Checkout Template
         uses: actions/checkout@v6
 
+      # 不用 pnpm/action-setup
+      #
+      # 那个 action 自安装 pnpm 时会读仓库的 npm 配置去解析包，而模板仓库自己的
+      # .npmrc 里是未渲染的占位符（registry=[[ .NpmRegistry ]]），
+      # 于是它拿占位符当 URL 解析，直接报：
+      #   ERR_INVALID_URL  Invalid URL
+      #   at Object.getAuthHeaderValueByURI
+      # 报错位置在 action 内部，看不出和仓库里的 .npmrc 有关系。
+      #
+      # 这是「模板仓库自己跑 CI」特有的坑：仓库里的配置文件本就不该被当真，
+      # 它们要等渲染之后才有意义。用 npm 全局装 pnpm 绕开整个解析过程。
+      #
+      # [EN] pnpm/action-setup self-installs by resolving packages through the repository's npm
+      # configuration, and this template's own .npmrc holds an unrendered placeholder as its
+      # registry, which the action parses as a URL and rejects with ERR_INVALID_URL inside
+      # getAuthHeaderValueByURI — an error that gives no hint it came from the repository's
+      # .npmrc. It is a hazard specific to a template repository running its own CI, where the
+      # config files are not meant to be taken literally until rendered. Installing pnpm through
+      # npm skips the resolution entirely.
       - name: 📦 Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
+        run: npm install -g pnpm@9
 
       - name: 🟢 Setup Node
         uses: actions/setup-node@v4
@@ -199,10 +216,27 @@ jobs:
       - name: ⬇️ Checkout Template
         uses: actions/checkout@v6
 
+      # 不用 pnpm/action-setup
+      #
+      # 那个 action 自安装 pnpm 时会读仓库的 npm 配置去解析包，而模板仓库自己的
+      # .npmrc 里是未渲染的占位符（registry=[[ .NpmRegistry ]]），
+      # 于是它拿占位符当 URL 解析，直接报：
+      #   ERR_INVALID_URL  Invalid URL
+      #   at Object.getAuthHeaderValueByURI
+      # 报错位置在 action 内部，看不出和仓库里的 .npmrc 有关系。
+      #
+      # 这是「模板仓库自己跑 CI」特有的坑：仓库里的配置文件本就不该被当真，
+      # 它们要等渲染之后才有意义。用 npm 全局装 pnpm 绕开整个解析过程。
+      #
+      # [EN] pnpm/action-setup self-installs by resolving packages through the repository's npm
+      # configuration, and this template's own .npmrc holds an unrendered placeholder as its
+      # registry, which the action parses as a URL and rejects with ERR_INVALID_URL inside
+      # getAuthHeaderValueByURI — an error that gives no hint it came from the repository's
+      # .npmrc. It is a hazard specific to a template repository running its own CI, where the
+      # config files are not meant to be taken literally until rendered. Installing pnpm through
+      # npm skips the resolution entirely.
       - name: 📦 Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
+        run: npm install -g pnpm@9
 
       - name: 🟢 Setup Node
         uses: actions/setup-node@v4

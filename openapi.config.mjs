@@ -56,16 +56,19 @@ export default {
    * points it at a specific release's aggregated document and chains "contract released ->
    * SDK regenerated" together automatically.
    *
-   * 默认指向 Swagger 官方 Petstore 示例文档（公网可访问），所以 kopy new 之后
-   * 直接 pnpm generate 就能跑通整条链路，确认没问题再换成你自己的地址。
+   * 默认指向协议中心模板 build 分支上的聚合文档，所以 kopy new 之后直接
+   * pnpm generate 就能拿到与同一套模板生成的服务完全对应的接口。
+   * 那个仓库的 master 全是 kopy 占位符、拉不到可用文档，所以必须是 build 分支。
    * 生成器同时吃 OpenAPI 3 与 Swagger 2，两种文档可以混在同一个 sources 里。
    *
    * `name` is only used in log output; `url` is what gets fetched. Append more
    * entries for a multi-service gateway: all documents are merged in a single
    * run, and duplicate schema names resolve to the first occurrence.
-   * The default points at the public Swagger Petstore spec so `pnpm generate` works
-   * right after scaffolding; swap it for your own once the pipeline has run. Both
-   * OpenAPI 3 and Swagger 2 documents are accepted and can be mixed here.
+   * The default points at the aggregated document on the contract-hub template's build branch,
+   * so `pnpm generate` right after scaffolding yields exactly the APIs implemented by the
+   * services generated from the same set of templates. That repository's master is all kopy
+   * placeholders and serves no usable document, hence the build branch. Both OpenAPI 3 and
+   * Swagger 2 documents are accepted and can be mixed here.
    */
   sources: [
     {
